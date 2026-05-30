@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>座標獵人</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a1a;
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .container { text-align: center; padding: 20px; max-width: 600px; }
+  h1 { color: #ff8c00; font-size: 2em; margin-bottom: 10px; text-shadow: 2px 2px 0 #000; }
+  .info-bar { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 1.2em; }
+  .info-bar span { background: #333; padding: 5px 15px; border-radius: 5px; }
+  .score { color: #ff8c00; }
+  .timer { color: #aaa; }
+  .grid-container { display: inline-block; background: #222; padding: 10px; border-radius: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(11, 40px); gap: 2px; }
+  .cell {
+    width: 40px; height: 40px; background: #2a2a2a; border: 1px solid #444;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: #666; cursor: default; border-radius: 3px;
+  }
+  .cell.hit { background: #ff8c00; color: #fff; font-weight: bold; }
+  .cell.miss { background: #444; color: #888; }
+  .cell.revealed { background: #ff4444; color: #fff; font-weight: bold; }
+  .cell.empty-revealed { background: #333; color: #555; }
+  .controls { margin: 15px 0; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .controls input {
+    background: #333; border: 1px solid #ff8c00; color: #fff; padding: 8px 12px;
+    font-size: 1em; border-radius: 5px; font-family: 'Courier New', monospace; width: 140px;
+  }
+  .controls input::placeholder { color: #666; }
+  .btn {
+    background: #ff8c00; color: #1a1a1a; border: none; padding: 8px 20px;
+    font-size: 1em; border-radius: 5px; cursor: pointer; font-family: 'Courier New', monospace;
+    font-weight: bold; transition: background 0.2s;
+  }
+  .btn:hover { background: #ffa533; }
+  .btn:disabled { background: #555; color: #888; cursor: not-allowed; }
+  .btn.secondary { background: #444; color: #fff; }
+  .btn.secondary:hover { background: #555; }
+  .message { margin-top: 10px; font-size: 1.1em; min-height: 1.5em; color: #ff8c00; }
+  .hint { font-size: 0.8em; color: #666; margin-top: 5px; }
+  .axis-label { color: #888; font-size: 12px; }
+  .y-label { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-right: 5px; }
+  .y-label .cell { background: transparent; border: none; color: #888; font-size: 12px; }
+  .grid-wrapper { display: flex; align-items: center; justify-content: center; }
+  .x-labels { display: flex; gap: 2px; justify-content: center; margin-top: 5px; margin-left: 45px; }
+  .x-labels span { width: 40px; text-align: center; color: #888; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎯 座標獵人</h1>
+  <div class="info-bar">
+    <span class="score">得分：<span id="score">0</span> / 10</span>
+    <span class="timer">⏱ <span id="timer">60</span>s</span>
+  </div>
+  <div id="grid"></div>
+  <div class="controls">
+    <input type="text" id="input" placeholder="ex: 2,-3" maxlength="7">
+    <button class="btn" id="guessBtn">發射</button>
+    <button class="btn secondary" id="restartBtn">重新開始</button>
+  </div>
+  <div class="message" id="message"></div>
+  <div class="hint">輸入格式：x,y（範圍 -5~5）</div>
+</div>
+<script>
+  const SIZE = 11, OFFSET = 5, TOTAL = 10;
+  let targets = [], found = [], score = 0, timeLeft = 60, timerId = null, gameOver = false;
+  const gridEl = document.getElementById('grid');
+  const scoreEl = document.getElementById('score');
+  const timerEl = document.getElementById('timer');
+  const inputEl = document.getElementById('input');
+  const msgEl = document.getElementById('message');
+  const guessBtn = document.getElementById('guessBtn');
+
+  function startGame() {
+    targets = []; found = []; score = 0; gameOver = false;
+    scoreEl.textContent = '0'; timeLeft = 60; timerEl.textContent = '60';
+    msgEl.textContent = ''; inputEl.disabled = false; guessBtn.disabled = false;
+    clearInterval(timerId);
+    while (targets.length < TOTAL) {
+      const x = Math.floor(Math.random() * SIZE) - OFFSET;
+      const y = Math.floor(Math.random() * SIZE) - OFFSET;
+      if (!targets.some(t => t.x === x && t.y === y)) targets.push({ x, y });
+    }
+    renderGrid();
+    timerId = setInterval(() => {
+      timeLeft--;
+      timerEl.textContent = timeLeft;
+      if (timeLeft <= 0) endGame('時間到！');
+    }, 1000);
+  }
+
+  function renderGrid() {
+    gridEl.innerHTML = '';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'grid-wrapper';
+    const yLabels = document.createElement('div');
+    yLabels.className = 'y-label';
+    for (let y = OFFSET; y >= -OFFSET; y--) {
+      const lbl = document.createElement('div');
+      lbl.className = 'cell'; lbl.textContent = y;
+      yLabels.appendChild(lbl);
+    }
+    wrapper.appendChild(yLabels);
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for (let y = OFFSET; y >= -OFFSET; y--) {
+      for (let x = -OFFSET; x <= OFFSET; x++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.x = x; cell.dataset.y = y;
+        const f = found.find(f => f.x === x && f.y === y);
+        if (f) {
+          cell.classList.add(f.hit ? 'hit' : 'miss');
+          cell.textContent = f.hit ? '✓' : '✗';
+        } else if (gameOver && targets.some(t => t.x === x && t.y === y)) {
+          cell.classList.add('revealed');
+          cell.textContent = '●';
+        }
+        grid.appendChild(cell);
+      }
+    }
+    wrapper.appendChild(grid);
+    gridEl.appendChild(wrapper);
+    const xLabels = document.createElement('div');
+    xLabels.className = 'x-labels';
+    for (let x = -OFFSET; x <= OFFSET; x++) {
+      const span = document.createElement('span');
+      span.textContent = x; xLabels.appendChild(span);
+    }
+    gridEl.appendChild(xLabels);
+  }
+
+  function handleGuess() {
+    if (gameOver) return;
+    const val = inputEl.value.trim();
+    const m = val.match(/^(-?\d+)\s*,\s*(-?\d+)$/);
+    if (!m) { msgEl.textContent = '格式錯誤！請輸入 x,y（ex: 2,-3）'; return; }
+    const x = parseInt(m[1]), y = parseInt(m[2]);
+    if (x < -5 || x > 5 || y < -5 || y > 5) { msgEl.textContent = '範圍錯誤！x 和 y 請介於 -5~5'; return; }
+    if (found.some(f => f.x === x && f.y === y)) { msgEl.textContent = '這個座標已經猜過了！'; return; }
+    const hit = targets.some(t => t.x === x && t.y === y);
+    found.push({ x, y, hit });
+    if (hit) { score++; scoreEl.textContent = score; msgEl.textContent = '🎯 命中！'; }
+    else msgEl.textContent = '❌ 沒中⋯⋯';
+    inputEl.value = ''; inputEl.focus();
+    renderGrid();
+    if (score >= TOTAL) endGame('🎉 全數命中！你贏了！');
+  }
+
+  function endGame(reason) {
+    clearInterval(timerId); gameOver = true;
+    inputEl.disabled = true; guessBtn.disabled = true;
+    msgEl.textContent = reason;
+    renderGrid();
+  }
+
+  inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') handleGuess(); });
+  guessBtn.addEventListener('click', handleGuess);
+  document.getElementById('restartBtn').addEventListener('click', startGame);
+  startGame();
+</script>
+</body>
+</html>
